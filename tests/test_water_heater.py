@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from homeassistant.components.water_heater import WaterHeaterEntity
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.tuya_local.const import (
@@ -11,6 +12,7 @@ from custom_components.tuya_local.const import (
     CONF_TYPE,
     DOMAIN,
 )
+from custom_components.tuya_local.helpers.device_config import get_config
 from custom_components.tuya_local.water_heater import (
     TuyaLocalWaterHeater,
     async_setup_entry,
@@ -97,3 +99,25 @@ async def test_init_entry_fails_if_config_is_missing(hass):
     except ValueError:
         pass
     m_add_entities.assert_not_called()
+
+
+def _kettle(mocker, dps):
+    """A water heater whose temperature range depends on a unit dp."""
+    device = mocker.MagicMock()
+    device.get_property.side_effect = lambda dp_id: dps.get(dp_id)
+    cfg = get_config("weeket_kes5211tece_kettle")
+    ecfg = next(e for e in cfg.all_entities() if e.entity == "water_heater")
+    return TuyaLocalWaterHeater(device, ecfg)
+
+
+def test_temp_range_falls_back_while_unit_unknown(mocker):
+    """Before the unit dp is reported (offline, startup) there is no range."""
+    subject = _kettle(mocker, {})
+    assert subject.min_temp == WaterHeaterEntity.min_temp.fget(subject)
+    assert subject.max_temp == WaterHeaterEntity.max_temp.fget(subject)
+
+
+def test_temp_range_follows_unit(mocker):
+    subject = _kettle(mocker, {"6": "c"})
+    assert subject.min_temp == 70
+    assert subject.max_temp == 100
